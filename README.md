@@ -1,5 +1,5 @@
 # brgeegor
-The SAS codes which generate the simulation data and fit the mothodology described in the paper "A bias-reduced generalized estimating equation approach for proportional odds models with small sample longitudinal ordinal categorical data", by Yukio Tada and Tosiya Sato. 
+The SAS codes which implement simulation study and fit the mothodology described in the paper "A bias-reduced generalized estimating equation approach for proportional odds models with small sample longitudinal ordinal categorical data", by Yukio Tada and Tosiya Sato (20xx, Statistics in Medicine). 
 
 ## brgeegor.sas
 The SAS macro to apply the bias-reduced generalized estmating equation (BR-GEE) to estimate the regression parameter of the proportional odds model (POM) for longitudinal ordinal data.  
