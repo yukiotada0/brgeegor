@@ -37,21 +37,25 @@ start brgeegor(ID,TP,X,Y,BETA0,CRITERIA,MAXIT,ASSOC,MGEE);
 /* set initial value of parameter */
   beta = j(stop,1,0)//beta0;
   nbeta = nrow(beta);
-  ysize = nrow(y);
-  do yr = 1 to stop;
-    cum_p=nrow(y[loc(y<=yr),])/ysize;
-    beta[yr,1]=log(cum_p/(1-cum_p));
+
+  if nrow(loc(beta0^=0)) = 0 then do;
+    ysize = nrow(y);
+    do yr = 1 to stop;
+      cum_p=nrow(y[loc(y<=yr),])/ysize;
+      beta[yr,1]=log(cum_p/(1-cum_p));
+    end;
   end;
 
 /* To estimate crude odds ratio */
   maxt = max(tp);      /* max of time points */
 
+/**/
 if ASSOC=2 then do;
   npair=0;
   twLOR=0;
   mwLOR=0;
   do t1=1 to maxt-1;
-    do t2=2 to maxt;
+    do t2=t1+1 to maxt;
 	  wLOR=0;
 	  tVarOR=0;
 
@@ -78,8 +82,8 @@ if ASSOC=2 then do;
 	      end;
           LOR_LM=log(A_LM+0.5)+log(D_LM+0.5)-log(B_LM+0.5)-log(C_LM+0.5);
 	      VarOR_LM=1/(A_LM+0.5)+1/(B_LM+0.5)+1/(C_LM+0.5)+1/(D_LM+0.5);
-	      wLOR=wLOR+LOR_LM*VarOR_LM;
-	      tVarOR=tVarOR+VarOR_LM;
+	      wLOR=wLOR+LOR_LM/VarOR_LM;
+	      tVarOR=tVarOR+1/VarOR_LM;
 	    end;
       end;
       wLOR=wLOR/tVarOR;
@@ -97,7 +101,6 @@ Do it=1 to maxit while (crit > criteria);
 
   U1 = j( nbeta, 1, 0);
   dvd = j( nbeta, nbeta, 0);
-  u1_mean = j(nbeta, 1, 0);
   u1sq = j( nbeta, nbeta, 0);
   u1sq_c = j( nbeta, nbeta, 0);
   u1_adj = j( nbeta, 1, 0);
@@ -182,10 +185,8 @@ Do i=1 to n;
 
   END;
   
-  dvd =  dvd + D_i*inv(V_i)*D_i`;
+  dvd =  dvd + D_i*ginv(V_i)*D_i`;
 
-  u1_mean = u1_mean + D_i*inv(V_i)*( Y_i - p_i )/n;
-  
   n_obs = n_obs + T_i;
 
 end;               * this ends the loop over each person for B;
@@ -294,59 +295,117 @@ Do i=1 to n;
   end;
 
   U1_adj_i=J(nbeta,1,0);
-  DE_V_i=DE_i*inv(V_i);
+  DE_V_i=DE_i*ginv(V_i);
   do r=1 to nbeta;
     do s=1 to stop#T_i;
-	  U1_adj_i[r]=U1_adj_i[r]+0.5*trace(X_i*inv(dvd)*X_i`*(DE_V_i[s,]@I(stop#T_i))*dd_de_i)*X_i[s,r];
+	  U1_adj_i[r]=U1_adj_i[r]+0.5*trace(X_i*ginv(dvd)*X_i`*(DE_V_i[s,]@I(stop#T_i))*dd_de_i)*X_i[s,r];
 	end;
   end;
 
-  u1_i = D_i*inv(V_i)*( Y_i - p_i );
+  u1_i = D_i*ginv(V_i)*( Y_i - p_i );
 
   U1 = U1 + u1_i;                * the first set of equations;
 
   u1sq = u1sq + u1_i*u1_i`;      * estimate of sigma 1,1 matrix;
-/*   u1sq = u1sq + (n_obs-1)/(n_obs-nbeta)#n/(n-1)#(u1_i-u1_mean)*(u1_i-u1_mean)`; */
 
   U1_adj = U1_adj + U1_adj_i;
 
 /**/
-  h_i = D_i`*inv(dvd)*D_i*inv(V_i);
-  u1sq_c = u1sq_c + D_i*inv(V_i)*inv(I((stop) # T_i)-h_i)*( Y_i - p_i )*( Y_i - p_i )`*inv(I((stop) # T_i)-h_i`)*inv(V_i)*D_i`;
+/*   h_i = D_i`*ginv(dvd)*D_i*ginv(V_i); */
+/*   u1sq_c = u1sq_c + D_i*ginv(V_i)*inv(I((stop) # T_i)-h_i)*( Y_i - p_i )*( Y_i - p_i )`*inv(I((stop) # T_i)-h_i`)*ginv(V_i)*D_i`; */
 /**/
 
 end;               * this ends the loop over each person for B;
 
-  if MGEE=2 then U1 = U1 + U1_adj;
+    if MGEE=2 then U1 = U1 + U1_adj;
 
-  DELTA1 = solve( dvd, U1 );
-  beta = beta + DELTA1;
-  crit = max( ABS(DELTA1));
+    DELTA1 = ginv(dvd)*U1;
+
+    beta = beta + DELTA1;
+    crit = max( ABS(DELTA1));
 
 end;                       * this ends the loop over each iteration;
 
-     vb0 = inv(dvd);   * variance matrix of beta estimates;
-     *vb = vb0 * u1sq * vb0;    *robust variance matrix of beta;
-/*Morel at el. (2003)*/
-     *vb = vb0 * u1sq * vb0 + min(0.5, nbeta/(n-nbeta))*max(1, trace(vb0 * u1sq)/nbeta)*vb0;
+    vb0 = ginv(dvd);
+
+/*robust variance*/
+	vb = vb0 * u1sq * vb0;
 /*Mancl and DeRouen (2001)*/
-      vb = vb0 * u1sq_c * vb0;    *robust variance matrix of beta;
+    *vb_c = vb0 * u1sq_c * vb0;    *robust variance matrix of beta;
 
-   if min(vecdiag(vb)) > 0 & crit <= criteria then do;
-     sebeta = sqrt(vecdiag(vb));   *vector of estimated robust standard errors of beta;
-	 se_est1 = sebeta;
+    dvd2 = dvd + U1_adj*U1_adj`;
+    u1sq2 = u1sq + U1_adj*U1_adj`;
+    if MGEE=1 then do;
+      vb02 = vb0;
+      vb2 = vb;
+    end;
+    else if MGEE=2 then do;
+      vb02 = ginv(dvd2);
+      vb2 = vb02 * u1sq2 * vb02;
+    end;
 
+
+   conv1 = j(nbeta,1,0);
+   conv2 = j(nbeta,1,0);
+   estimat1 = j(nbeta,1,.);
+   se_est1 = j(nbeta,1,.);
+   se_est2 = j(nbeta,1,.);
+   z1 = j(nbeta,1,.);
+   z2 = j(nbeta,1,.);
+   p1 = j(nbeta,1,.);
+   lower1 = j(nbeta,1,.);
+   upper1 = j(nbeta,1,.);
+   p2 = j(nbeta,1,.);
+   lower2 = j(nbeta,1,.);
+   upper2 = j(nbeta,1,.);
+   p3 = j(nbeta,1,.);
+   lower3 = j(nbeta,1,.);
+   upper3 = j(nbeta,1,.);
+   p4 = j(nbeta,1,.);
+   lower4 = j(nbeta,1,.);
+   upper4 = j(nbeta,1,.);
+ 
+   if crit <= criteria then do;
+/**/
+     if min(vecdiag(vb2)) > -1e-8 then do; 
+        conv1 = j(nbeta,1,1); 
+        se_est1 = sqrt(choose(vecdiag(vb2) > 0, vecdiag(vb2), 0)); 
+ 	 end; 
+	 else do;
+       se_est1 = sqrt(vecdiag(vb02));
+	 end;
+     if min(vecdiag(vb)) > -1e-8 then do; 
+        conv2 = j(nbeta,1,1); 
+        se_est2 = sqrt(choose(vecdiag(vb) > 0, vecdiag(vb), 0)); 
+ 	 end; 
+	 else do;
+       se_est2 = sqrt(vecdiag(vb0));
+	 end;
+/**/
 	 estimat1 = beta;
-
-     z1 = beta/sebeta;              *z-statistics for beta;
+	 _nozero1 = loc(se_est1>0);
+	 _nozero2 = loc(se_est2>0);
+     z1[_nozero1] = beta[_nozero1]/se_est1[_nozero1];    *z-statistics for beta;
+     z2[_nozero2] = beta[_nozero2]/se_est2[_nozero2];    *z-statistics for beta;
+/**/
+	 p1 = choose(z1^=., 2 * (1 - cdf("t",abs(z1),N-nrow(beta))), .);
+	 lower1 = beta - tinv(0.975, N-nrow(beta)) * se_est1;
+	 upper1 = beta + tinv(0.975, N-nrow(beta)) * se_est1;
+/**/
+	 p2 = choose(z2^=., 2 * (1 - cdf("t",abs(z2),N-nrow(beta))), .);
+	 lower2 = beta - tinv(0.975, N-nrow(beta)) * se_est2;
+	 upper2 = beta + tinv(0.975, N-nrow(beta)) * se_est2;
+/**/
+	 p3 = choose(z1^=., 2 * (1 - cdf("normal",abs(z1))), .);
+	 lower3 = beta - probit(0.975) * se_est1;
+	 upper3 = beta + probit(0.975) * se_est1;
+/**/
+	 p4 = choose(z2^=., 2 * (1 - cdf("normal",abs(z2))), .);
+	 lower4 = beta - probit(0.975) * se_est2;
+	 upper4 = beta + probit(0.975) * se_est2;
    end;
-   else do;
-     estimat1 = j(nbeta,1,.);
-     se_est1 = j(nbeta,1,.);
-	 z1 = j(nbeta,1,.);
-   end;
 
-     return (estimat1||se_est1||z1);
+     return (estimat1||se_est1||se_est2||p1||lower1||upper1||p2||lower2||upper2||p3||lower3||upper3||p4||lower4||upper4||conv1||conv2);
 
 finish brgeegor;
 
